@@ -1,0 +1,17 @@
+{{ .urls }} {
+  reverse_proxy {
+    dynamic srv {{ .serviceName }}.service.consul
+
+    lb_policy least_conn
+    lb_try_duration 15s
+    lb_try_interval 250ms
+    fail_duration 5s
+
+    {{ if .useHttps }}
+    transport http {
+      tls
+      {{ if .skipTlsVerify }}tls_insecure_skip_verify{{ end }}
+    }
+    {{ end }}
+  }
+}
