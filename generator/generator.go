@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"embed"
 	"os"
-	"sort"
 	"strings"
+	"text/template"
 
 	"github.com/fortix/caddy-consul-ingress/config"
-
-	"text/template"
+	"github.com/fortix/caddy-consul-ingress/parser"
 
 	"go.uber.org/zap"
 )
@@ -23,14 +22,6 @@ type CaddyfileGenerator struct {
 	log           *zap.Logger
 	options       *config.Options
 	baseCaddyfile string
-}
-
-// Struct to hold service definition along with parsed tags
-type serviceDef struct {
-	service       string
-	srvUrls       []string
-	useHttps      bool
-	skipTlsVerify bool
 }
 
 func NewGenerator(log *zap.Logger, options *config.Options) *CaddyfileGenerator {
@@ -54,24 +45,23 @@ func NewGenerator(log *zap.Logger, options *config.Options) *CaddyfileGenerator 
 	return d
 }
 
-func (generator *CaddyfileGenerator) Generate(services map[string][]string) string {
+func (generator *CaddyfileGenerator) Generate(serviceDefs []*parser.ServiceDef, kvServiceDefs []*parser.ServiceDef) string {
 	var caddyfile = ""
-	var serviceDefs = []*serviceDef{}
+	var tmpl *template.Template
+	var err error
 
-	// Parse the services and their tags
-	for service, tags := range services {
-		if len(tags) > 0 {
-			serviceDef := generator.parseService(service, tags)
-			if serviceDef != nil {
-				serviceDefs = append(serviceDefs, serviceDef)
-			}
+	// Create the template
+	if len(serviceDefs) > 0 || len(kvServiceDefs) > 0 {
+		if generator.options.TemplateFile != "" {
+			tmpl, err = template.ParseFiles(generator.options.TemplateFile)
+		} else {
+			tmpl, err = template.New("service.tmpl").ParseFS(tmplFiles, "templates/service.tmpl")
+		}
+
+		if err != nil {
+			generator.log.Fatal("Failed to parse template", zap.Error(err))
 		}
 	}
-
-	// Sort the serviceDefs by service name to keep hash comparison consistent
-	sort.Slice(serviceDefs, func(i, j int) bool {
-		return serviceDefs[i].service < serviceDefs[j].service
-	})
 
 	// Start with the common base part
 	caddyfile += generator.baseCaddyfile
@@ -82,29 +72,46 @@ func (generator *CaddyfileGenerator) Generate(services map[string][]string) stri
 	} else {
 		generator.log.Info("Number of services found", zap.Int("count", len(serviceDefs)))
 
-		var tmpl *template.Template
-		var err error
-
-		if generator.options.TemplateFile != "" {
-			tmpl, err = template.ParseFiles(generator.options.TemplateFile)
-		} else {
-			tmpl, err = template.New("service.tmpl").ParseFS(tmplFiles, "templates/service.tmpl")
-		}
-
-		if err != nil {
-			generator.log.Fatal("Failed to parse template", zap.Error(err))
-		}
-
 		for _, serviceDef := range serviceDefs {
-			urls := strings.Join(serviceDef.srvUrls, " ")
+			urls := strings.Join(serviceDef.SrvUrls, " ")
 
-			generator.log.Info("Add service", zap.String("service", serviceDef.service), zap.String("urls", urls))
+			generator.log.Info("Add service", zap.String("service", serviceDef.Upstream), zap.String("urls", urls))
 
 			var tmplData = map[string]interface{}{
-				"serviceName":   serviceDef.service,
+				"to":            serviceDef.To,
+				"upstream":      serviceDef.Upstream,
 				"urls":          urls,
-				"useHttps":      serviceDef.useHttps,
-				"skipTlsVerify": serviceDef.skipTlsVerify,
+				"useHttps":      serviceDef.UseHttps,
+				"skipTlsVerify": serviceDef.SkipTlsVerify,
+			}
+
+			var tmplBytes bytes.Buffer
+			err = tmpl.Execute(&tmplBytes, tmplData)
+			if err != nil {
+				generator.log.Fatal("Failed to execute template", zap.Error(err))
+			}
+
+			caddyfile += tmplBytes.String() + "\n"
+		}
+	}
+
+	// If kvServiceDefs is empty, then log a message
+	if len(kvServiceDefs) == 0 {
+		generator.log.Warn("No static services found")
+	} else {
+		generator.log.Info("Number of static services found", zap.Int("count", len(kvServiceDefs)))
+
+		for _, serviceDef := range kvServiceDefs {
+			urls := strings.Join(serviceDef.SrvUrls, " ")
+
+			generator.log.Info("Add static service", zap.String("service", serviceDef.Upstream), zap.String("urls", urls))
+
+			var tmplData = map[string]interface{}{
+				"to":            serviceDef.To,
+				"upstream":      serviceDef.Upstream,
+				"urls":          urls,
+				"useHttps":      serviceDef.UseHttps,
+				"skipTlsVerify": serviceDef.SkipTlsVerify,
 			}
 
 			var tmplBytes bytes.Buffer
@@ -118,37 +125,4 @@ func (generator *CaddyfileGenerator) Generate(services map[string][]string) stri
 	}
 
 	return caddyfile
-}
-
-func (generator *CaddyfileGenerator) parseService(service string, tags []string) *serviceDef {
-	def := &serviceDef{
-		service:       service,
-		srvUrls:       []string{},
-		useHttps:      false,
-		skipTlsVerify: false,
-	}
-
-	for _, tag := range tags {
-		if strings.HasPrefix(tag, generator.options.UrlPrefix) {
-			segments := strings.Fields(tag)
-			srvUrl := strings.TrimPrefix(segments[0], generator.options.UrlPrefix)
-			def.srvUrls = append(def.srvUrls, srvUrl)
-
-			for _, segment := range segments[1:] {
-				if segment == "proto=https" {
-					def.useHttps = true
-				}
-				if segment == "tlsskipverify=true" {
-					def.skipTlsVerify = true
-				}
-			}
-		}
-	}
-
-	// If no tags found then return nil to indicate that this service should be ignored
-	if len(def.srvUrls) == 0 {
-		return nil
-	}
-
-	return def
 }

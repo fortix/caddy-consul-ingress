@@ -32,6 +32,7 @@ func init() {
 			fs.String("urlprefix", "urlprefix-", "Prefix for the tags defining service URLs")
 			fs.Duration("polling-interval", 30*time.Second, "Interval caddy should manually check consul for updated services")
 			fs.String("service-template", "", "Path to the service template file")
+			fs.String("kvpath", "/caddy-routes", "Path to the Consul KV store for custom routes")
 
 			return fs
 		}(),
@@ -74,6 +75,12 @@ func commandFunc(flags caddycmd.Flags) (int, error) {
 		options.TemplateFile = serviceTemplateEnv
 	} else {
 		options.TemplateFile = flags.String("service-template")
+	}
+
+	if kvPathEnv := os.Getenv("CONSUL_INGRESS_KV_PATH"); kvPathEnv != "" {
+		options.KVPath = kvPathEnv
+	} else {
+		options.KVPath = flags.String("kvpath")
 	}
 
 	if pollingIntervalEnv := os.Getenv("CONSUL_INGRESS_POLLING_INTERVAL"); pollingIntervalEnv != "" {

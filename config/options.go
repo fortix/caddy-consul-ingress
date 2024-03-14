@@ -9,5 +9,6 @@ type Options struct {
 	ConsulToken     string
 	UrlPrefix       string
 	TemplateFile    string
+	KVPath          string
 	PollingInterval time.Duration
 }

@@ -1,3 +1,5 @@
 /notes.md
 /buildenv_*
 /examples/*
+/bin/*
+!/bin/.gitignore
