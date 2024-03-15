@@ -1,6 +1,6 @@
 module github.com/fortix/caddy-consul-ingress
 
-go 1.22
+go 1.21
 
 require (
 	github.com/caddyserver/caddy/v2 v2.7.6
