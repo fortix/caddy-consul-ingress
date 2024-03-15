@@ -1,12 +1,12 @@
-{{ .urls }} {
+[[ .urls ]] {
   reverse_proxy {
-    {{ .to }} {{ .upstream }}
+    [[ .to ]] [[ .upstream ]]
 
-    {{ if .useHttps }}
+    [[ if .useHttps ]]
     transport http {
       tls
-      {{ if .skipTlsVerify }}tls_insecure_skip_verify{{ end }}
+      [[ if .skipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
     }
-    {{ end }}
+    [[ end ]]
   }
 }

@@ -53,9 +53,9 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs []*parser.ServiceDef, 
 	// Create the template
 	if len(serviceDefs) > 0 || len(kvServiceDefs) > 0 {
 		if generator.options.TemplateFile != "" {
-			tmpl, err = template.ParseFiles(generator.options.TemplateFile)
+			tmpl, err = template.New("service.tmpl").Delims("[[", "]]").ParseFiles(generator.options.TemplateFile)
 		} else {
-			tmpl, err = template.New("service.tmpl").ParseFS(tmplFiles, "templates/service.tmpl")
+			tmpl, err = template.New("service.tmpl").Delims("[[", "]]").ParseFS(tmplFiles, "templates/service.tmpl")
 		}
 
 		if err != nil {
