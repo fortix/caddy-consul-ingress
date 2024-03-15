@@ -78,13 +78,7 @@ func (ingressClient *ConsulIngressClient) Start() error {
 				if meta.LastIndex > params.WaitIndex {
 					params.WaitIndex = meta.LastIndex
 
-					// Parse the services and their tags
 					ingressClient.serviceDefs = ingressClient.parser.ParseService(services)
-
-					// Output the list of services
-					for _, serviceDef := range ingressClient.serviceDefs {
-						log.Info("Service", zap.String("to", serviceDef.To), zap.String("service", serviceDef.Upstream), zap.Strings("srvUrls", serviceDef.SrvUrls), zap.Bool("useHttps", serviceDef.UseHttps), zap.Bool("skipTlsVerify", serviceDef.SkipTlsVerify))
-					}
 
 					ingressClient.updateCaddyfile(log)
 				}
@@ -123,13 +117,7 @@ func (ingressClient *ConsulIngressClient) Start() error {
 					if meta.LastIndex > params.WaitIndex {
 						params.WaitIndex = meta.LastIndex
 
-						// Parse the services and their tags
 						ingressClient.kvServiceDefs = ingressClient.parser.ParseKV(&kvPairs)
-
-						// Output the list of services
-						for _, serviceDef := range ingressClient.kvServiceDefs {
-							log.Info("Service", zap.String("to", serviceDef.To), zap.String("service", serviceDef.Upstream), zap.Strings("srvUrls", serviceDef.SrvUrls), zap.Bool("useHttps", serviceDef.UseHttps), zap.Bool("skipTlsVerify", serviceDef.SkipTlsVerify))
-						}
 
 						ingressClient.updateCaddyfile(log)
 					}
