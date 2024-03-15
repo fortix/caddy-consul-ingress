@@ -122,11 +122,11 @@ func (ingressClient *ConsulIngressClient) Start() error {
 						ingressClient.updateCaddyfile(log)
 					}
 				}
-			}
 
-			// Connection to Consul lost, attempt reconnection
-			log.Warn("Connection to Consul lost, attempting reconnection...")
-			time.Sleep(5 * time.Second) // Wait before attempting reconnection
+				// Connection to Consul lost, attempt reconnection
+				log.Warn("Connection to Consul lost, attempting reconnection...")
+				time.Sleep(5 * time.Second) // Wait before attempting reconnection
+			}
 		}()
 	}
 
@@ -179,9 +179,10 @@ func (ingressClient *ConsulIngressClient) updateCaddyfile(log *zap.Logger) {
 		if resp.StatusCode == http.StatusOK {
 			log.Info("Successfully updated the Caddyfile")
 		} else {
-			log.Warn("Failed to update the Caddyfile", zap.Any("response", resp.StatusCode))
+			log.Error("Failed to update the Caddyfile", zap.Any("response", resp.StatusCode))
+			log.Error(caddyfile)
 		}
 	} else {
-		log.Debug("Caddyfile has not changed, skipping reload")
+		log.Info("Caddyfile has not changed, skipping reload")
 	}
 }
