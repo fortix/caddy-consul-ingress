@@ -21,16 +21,16 @@ The configuration is generated from tags placed against live services and custom
 The plugin uses the following default to generate the services:
 
 ```
-{{ .urls }} {
+[[ .urls ]] {
   reverse_proxy {
-    {{ .to }} {{ .upstream }}
+    [[ .to ]] [[ .upstream ]]
 
-    {{ if .useHttps }}
+    [[ if .useHttps ]]
     transport http {
       tls
-      {{ if .skipTlsVerify }}tls_insecure_skip_verify{{ end }}
+      [[ if .skipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
     }
-    {{ end }}
+    [[ end ]]
   }
 }
 ```
