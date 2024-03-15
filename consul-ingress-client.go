@@ -23,29 +23,29 @@ var CaddyfileAutosavePath = filepath.Join(caddy.AppConfigDir(), "Caddyfile.autos
 type ConsulIngressClient struct {
 	mutex             sync.Mutex
 	options           *config.Options
+	logger            *zap.Logger
 	parser            *parser.ServiceParser
 	generator         *generator.CaddyfileGenerator
 	lastCaddyfileHash string
-	serviceDefs       []*parser.ServiceDef
-	kvServiceDefs     []*parser.ServiceDef
+	serviceDefs       *parser.Services
+	kvServiceDefs     *parser.Services
 }
 
 func NewConsulIngressClient(options *config.Options) *ConsulIngressClient {
 	return &ConsulIngressClient{
 		mutex:             sync.Mutex{},
 		options:           options,
-		parser:            parser.NewParser(logger(), options),
-		generator:         generator.NewGenerator(logger(), options),
+		logger:            options.Logger,
+		parser:            parser.NewParser(options.Logger, options),
+		generator:         generator.NewGenerator(options.Logger, options),
 		lastCaddyfileHash: "",
-		serviceDefs:       []*parser.ServiceDef{},
-		kvServiceDefs:     []*parser.ServiceDef{},
+		serviceDefs:       nil,
+		kvServiceDefs:     nil,
 	}
 }
 
 func (ingressClient *ConsulIngressClient) Start() error {
-	log := logger()
-
-	log.Info("Starting Consul Ingress Client")
+	ingressClient.logger.Info("Starting Consul Ingress Client")
 
 	consulConfig := &consul.Config{
 		Address: ingressClient.options.ConsulAddress,
@@ -53,12 +53,12 @@ func (ingressClient *ConsulIngressClient) Start() error {
 	}
 
 	// Start a goroutine to watch for changes in Consul services
-	log.Info("Watch for changes in Consul services")
+	ingressClient.logger.Info("Watch for changes in Consul services")
 	go func() {
 		for {
 			consulClient, err := consul.NewClient(consulConfig)
 			if err != nil {
-				log.Warn("Failed to create Consul client", zap.Error(err))
+				ingressClient.logger.Warn("Failed to create Consul client", zap.Error(err))
 				time.Sleep(5 * time.Second) // Wait before attempting reconnection
 				continue
 			}
@@ -71,33 +71,33 @@ func (ingressClient *ConsulIngressClient) Start() error {
 			for {
 				services, meta, err := consulClient.Catalog().Services(params)
 				if err != nil {
-					log.Error("Failed to retrieve services from Consul", zap.Error(err))
+					ingressClient.logger.Error("Failed to retrieve services from Consul", zap.Error(err))
 					break
 				}
 
 				if meta.LastIndex > params.WaitIndex {
 					params.WaitIndex = meta.LastIndex
 
-					ingressClient.serviceDefs = ingressClient.parser.ParseService(services)
+					ingressClient.serviceDefs = ingressClient.parser.ParseServices(services)
 
-					ingressClient.updateCaddyfile(log)
+					ingressClient.updateCaddyfile(ingressClient.logger)
 				}
 			}
 
 			// Connection to Consul lost, attempt reconnection
-			log.Warn("Connection to Consul lost, attempting reconnection...")
+			ingressClient.logger.Warn("Connection to Consul lost, attempting reconnection...")
 			time.Sleep(5 * time.Second) // Wait before attempting reconnection
 		}
 	}()
 
 	// Start a goroutine to watch for changes in Consul KV store
 	if ingressClient.options.KVPath != "" {
-		log.Info("Watch for changes in Consul Key Value store")
+		ingressClient.logger.Info("Watch for changes in Consul Key Value store")
 		go func() {
 			for {
 				consulClient, err := consul.NewClient(consulConfig)
 				if err != nil {
-					log.Warn("Failed to create Consul client", zap.Error(err))
+					ingressClient.logger.Warn("Failed to create Consul client", zap.Error(err))
 					time.Sleep(5 * time.Second) // Wait before attempting reconnection
 					continue
 				}
@@ -110,7 +110,7 @@ func (ingressClient *ConsulIngressClient) Start() error {
 				for {
 					kvPairs, meta, err := consulClient.KV().List(ingressClient.options.KVPath, params)
 					if err != nil {
-						log.Error("Failed to retrieve KV pairs from Consul", zap.Error(err))
+						ingressClient.logger.Error("Failed to retrieve KV pairs from Consul", zap.Error(err))
 						break
 					}
 
@@ -119,12 +119,12 @@ func (ingressClient *ConsulIngressClient) Start() error {
 
 						ingressClient.kvServiceDefs = ingressClient.parser.ParseKV(&kvPairs)
 
-						ingressClient.updateCaddyfile(log)
+						ingressClient.updateCaddyfile(ingressClient.logger)
 					}
 				}
 
 				// Connection to Consul lost, attempt reconnection
-				log.Warn("Connection to Consul lost, attempting reconnection...")
+				ingressClient.logger.Warn("Connection to Consul lost, attempting reconnection...")
 				time.Sleep(5 * time.Second) // Wait before attempting reconnection
 			}
 		}()

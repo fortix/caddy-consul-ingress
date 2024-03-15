@@ -8,31 +8,80 @@ The configuration is generated from tags placed against live services and custom
 
 | Environment Variable | Flag | Description |
 | -------------------- | ---- | ----------- |
-| CONSUL_INGRESS_CADDYFILE | --ingress-caddyfile | The optional Caddyfile to include before the services |
+| CONSUL_INGRESS_TEMPLATE_FILE | --template | The template file to use to generate the Caddyfile, supports Go templates |
 | CONSUL_INGRESS_CONSUL_ADDRESS | --consul-address | The address of the consul server, defaults to `http://localhost:8500` |
 | CONSUL_INGRESS_CONSUL_TOKEN | --consul-token | The access token for Consul |
 | CONSUL_INGRESS_URLPREFIX | --urlprefix | Only tags starting with this string are considered for service routing, defaults to `urlprefix-` |
-| CONSUL_INGRESS_SERVICE_TEMPLATE | --service-template | The location of a service template file which is used to generate each service, supports Go templates |
 | CONSUL_INGRESS_KV_PATH | --kvpath | The Key Value path to load custom routes from, defaults to `/caddy-routes` |
 | CONSUL_INGRESS_POLLING_INTERVAL | --polling-interval | Rate to poll Consul at in seconds, defaults to `30` |
+| CONSUL_INGRESS_WILDCARD_DOMAINS | --wildcard-domains | Comma separated list of wildcard domains e.g. `*.example.com` |
 
-### Default Service Template
+### Default Template
 
-The plugin uses the following default to generate the services:
+The plugin uses the following default template to generate the Caddyfile, it can be replaced with the `--template` parameter:
 
 ```
-[[ .urls ]] {
-  reverse_proxy {
-    [[ .to ]] [[ .upstream ]]
+{
+  admin localhost:2019
 
-    [[ if .useHttps ]]
+  log {
+    output stdout
+    level INFO
+    format console
+  }
+}
+
+(reverseProxyConfig) {
+  header_up +X_FORWARDED_PORT 443
+  lb_policy least_conn
+  lb_try_duration 15s
+  lb_try_interval 250ms
+  fail_duration 5s
+}
+
+[[ range $domain, $services := .wildcardServices ]]
+[[ $domain ]] {
+  encode zstd gzip
+
+  [[ range $serviceIndex, $service := $services ]]
+  @wildcard_[[ $serviceIndex ]] host [[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]]
+  handle @wildcard_[[ $serviceIndex ]] {
+    reverse_proxy {
+      [[ $service.To ]] [[ $service.Upstream ]]
+      import reverseProxyConfig
+      [[ if $service.UseHttps ]]
+      transport http {
+        tls
+        [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      }
+      [[ end ]]
+    }
+  }
+  [[ end ]]
+
+  # Fallback for otherwise unhandled domains
+  handle {
+    abort
+  }
+}
+[[ end ]]
+
+[[ range $service := .services ]]
+[[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]] {
+  encode zstd gzip
+
+  reverse_proxy {
+    [[ $service.To ]] [[ $service.Upstream ]]
+    import reverseProxyConfig
+    [[ if $service.UseHttps ]]
     transport http {
       tls
-      [[ if .skipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
     }
     [[ end ]]
   }
 }
+[[ end ]]
 ```
 
 ## Building

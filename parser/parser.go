@@ -19,6 +19,12 @@ type ServiceDef struct {
 	SkipTlsVerify bool
 }
 
+// Struct to hold all service groups and services
+type Services struct {
+	ServiceGroups map[string][]*ServiceDef
+	Services      []*ServiceDef
+}
+
 type ServiceParser struct {
 	log     *zap.Logger
 	options *config.Options
@@ -31,7 +37,7 @@ func NewParser(log *zap.Logger, options *config.Options) *ServiceParser {
 	}
 }
 
-func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) []*ServiceDef {
+func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 	serviceMap := make(map[string]*ServiceDef)
 
 	for _, kv := range *kvPairs {
@@ -44,7 +50,9 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) []*ServiceDef {
 				useHttps := false
 				skipTlsVerify := false
 
-				for _, segment := range segments[1:len(segments)] {
+				p.log.Info("Found static URL", zap.String("url", srvUrl))
+
+				for _, segment := range segments[1:] {
 					if segment == "proto=https" {
 						useHttps = true
 					}
@@ -77,21 +85,86 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) []*ServiceDef {
 		}
 	}
 
-	serviceDefs := make([]*ServiceDef, 0, len(serviceMap))
-	for _, def := range serviceMap {
-		serviceDefs = append(serviceDefs, def)
+	// Break the list of services up for wildcard domains
+	var parsedServices = &Services{}
+	parsedServices.ServiceGroups = make(map[string][]*ServiceDef)
+	parsedServices.Services = []*ServiceDef{}
+
+	for _, defSrc := range serviceMap {
+		def := &ServiceDef{
+			To:            defSrc.To,
+			Upstream:      defSrc.Upstream,
+			SrvUrls:       []string{},
+			UseHttps:      defSrc.UseHttps,
+			SkipTlsVerify: defSrc.SkipTlsVerify,
+		}
+
+		wildcardDefs := make(map[string]*ServiceDef)
+		for _, srvUrl := range defSrc.SrvUrls {
+			var wildcardMatch bool = false
+			var wildcardDomain string
+			if len(p.options.WildcardDomains) > 0 {
+				cmpUrl := strings.Replace(srvUrl, strings.SplitN(srvUrl, ".", 2)[0], "*", 1)
+				for _, wildcardDomain = range p.options.WildcardDomains {
+					if cmpUrl == wildcardDomain {
+						wildcardMatch = true
+						break
+					}
+				}
+			}
+
+			if wildcardMatch {
+				// If the wildcard domain is not already in the serviceGroups then add it
+				if _, ok := wildcardDefs[wildcardDomain]; !ok {
+					wildcardDefs[wildcardDomain] = &ServiceDef{
+						To:            defSrc.To,
+						Upstream:      defSrc.Upstream,
+						SrvUrls:       []string{},
+						UseHttps:      def.UseHttps,
+						SkipTlsVerify: def.SkipTlsVerify,
+					}
+				}
+				wildcardDefs[wildcardDomain].SrvUrls = append(wildcardDefs[wildcardDomain].SrvUrls, srvUrl)
+			} else {
+				def.SrvUrls = append(def.SrvUrls, srvUrl)
+			}
+		}
+
+		// If have urls then append to serviceDefs
+		if len(def.SrvUrls) > 0 {
+			parsedServices.Services = append(parsedServices.Services, def)
+		}
+
+		// If have wildcardDefs then append to serviceGroups
+		if len(wildcardDefs) > 0 {
+			for wildcardDomain, wildcardDef := range wildcardDefs {
+				if _, ok := parsedServices.ServiceGroups[wildcardDomain]; !ok {
+					parsedServices.ServiceGroups[wildcardDomain] = []*ServiceDef{}
+				}
+				parsedServices.ServiceGroups[wildcardDomain] = append(parsedServices.ServiceGroups[wildcardDomain], wildcardDef)
+			}
+		}
 	}
 
 	// Sort the serviceDefs by service name to keep hash comparison consistent
-	sort.Slice(serviceDefs, func(i, j int) bool {
-		return serviceDefs[i].Upstream < serviceDefs[j].Upstream
+	sort.Slice(parsedServices.Services, func(i, j int) bool {
+		return parsedServices.Services[i].Upstream < parsedServices.Services[j].Upstream
 	})
 
-	return serviceDefs
+	// For each service group, sort the serviceDefs by service name to keep hash comparison consistent
+	for _, serviceGroup := range parsedServices.ServiceGroups {
+		sort.Slice(serviceGroup, func(i, j int) bool {
+			return (serviceGroup)[i].Upstream < (serviceGroup)[j].Upstream
+		})
+	}
+
+	return parsedServices
 }
 
-func (p *ServiceParser) ParseService(services map[string][]string) []*ServiceDef {
-	var serviceDefs = []*ServiceDef{}
+func (p *ServiceParser) ParseServices(services map[string][]string) *Services {
+	var parsedServices = &Services{}
+	parsedServices.ServiceGroups = make(map[string][]*ServiceDef)
+	parsedServices.Services = []*ServiceDef{}
 
 	// Parse the services and their tags
 	for service, tags := range services {
@@ -106,36 +179,111 @@ func (p *ServiceParser) ParseService(services map[string][]string) []*ServiceDef
 				SkipTlsVerify: false,
 			}
 
+			wildcardDefs := make(map[string]*ServiceDef)
+
 			for _, tag := range tags {
 				if strings.HasPrefix(tag, p.options.UrlPrefix) {
 					segments := strings.Fields(tag)
 					srvUrl := strings.TrimPrefix(segments[0], p.options.UrlPrefix)
-					def.SrvUrls = append(def.SrvUrls, srvUrl)
+
+					p.log.Info("Found service URL", zap.String("url", srvUrl))
+
+					var useHttps bool = false
+					var skipTlsVerify bool = false
 
 					for _, segment := range segments[1:] {
 						if segment == "proto=https" {
-							def.UseHttps = true
+							useHttps = true
 						}
 						if segment == "tlsskipverify=true" {
+							skipTlsVerify = true
+						}
+					}
+
+					// Test if the url is part of a wildcard domain
+					var wildcardMatch bool = false
+					var wildcardDomain string
+					if len(p.options.WildcardDomains) > 0 {
+						cmpUrl := strings.Replace(srvUrl, strings.SplitN(srvUrl, ".", 2)[0], "*", 1)
+						for _, wildcardDomain = range p.options.WildcardDomains {
+							if cmpUrl == wildcardDomain {
+								wildcardMatch = true
+								break
+							}
+						}
+					}
+
+					if wildcardMatch {
+						wildcardDef := &ServiceDef{
+							To:            to,
+							Upstream:      upstream,
+							SrvUrls:       []string{},
+							UseHttps:      useHttps,
+							SkipTlsVerify: skipTlsVerify,
+						}
+						wildcardDef.SrvUrls = append(wildcardDef.SrvUrls, srvUrl)
+
+						// If the wildcard domain is not already in the serviceGroups then add it
+						if _, ok := wildcardDefs[wildcardDomain]; !ok {
+							wildcardDefs[wildcardDomain] = &ServiceDef{
+								To:            to,
+								Upstream:      upstream,
+								SrvUrls:       []string{},
+								UseHttps:      false,
+								SkipTlsVerify: false,
+							}
+						}
+
+						if useHttps {
+							wildcardDefs[wildcardDomain].UseHttps = true
+						}
+						if skipTlsVerify {
+							wildcardDefs[wildcardDomain].SkipTlsVerify = true
+						}
+						wildcardDefs[wildcardDomain].SrvUrls = append(wildcardDefs[wildcardDomain].SrvUrls, srvUrl)
+
+					} else {
+						if useHttps {
+							def.UseHttps = true
+						}
+						if skipTlsVerify {
 							def.SkipTlsVerify = true
 						}
+						def.SrvUrls = append(def.SrvUrls, srvUrl)
 					}
 				}
 			}
 
 			// If have urls then append to serviceDefs
 			if len(def.SrvUrls) > 0 {
-				serviceDefs = append(serviceDefs, def)
+				parsedServices.Services = append(parsedServices.Services, def)
+			}
+
+			// If have wildcardDefs then append to serviceGroups
+			if len(wildcardDefs) > 0 {
+				for wildcardDomain, wildcardDef := range wildcardDefs {
+					if _, ok := parsedServices.ServiceGroups[wildcardDomain]; !ok {
+						parsedServices.ServiceGroups[wildcardDomain] = []*ServiceDef{}
+					}
+					parsedServices.ServiceGroups[wildcardDomain] = append(parsedServices.ServiceGroups[wildcardDomain], wildcardDef)
+				}
 			}
 		}
 	}
 
 	// Sort the serviceDefs by service name to keep hash comparison consistent
-	sort.Slice(serviceDefs, func(i, j int) bool {
-		return serviceDefs[i].Upstream < serviceDefs[j].Upstream
+	sort.Slice(parsedServices.Services, func(i, j int) bool {
+		return parsedServices.Services[i].Upstream < parsedServices.Services[j].Upstream
 	})
 
-	return serviceDefs
+	// For each service group, sort the serviceDefs by service name to keep hash comparison consistent
+	for _, serviceGroup := range parsedServices.ServiceGroups {
+		sort.Slice(serviceGroup, func(i, j int) bool {
+			return (serviceGroup)[i].Upstream < (serviceGroup)[j].Upstream
+		})
+	}
+
+	return parsedServices
 }
 
 func (p *ServiceParser) parseService(service string) (string, string) {

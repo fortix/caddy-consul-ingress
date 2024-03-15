@@ -1,12 +1,61 @@
-[[ .urls ]] {
-  reverse_proxy {
-    [[ .to ]] [[ .upstream ]]
+{
+  admin localhost:2019
 
-    [[ if .useHttps ]]
+  log {
+    output stdout
+    level INFO
+    format console
+  }
+}
+
+(reverseProxyConfig) {
+  header_up +X_FORWARDED_PORT 443
+  lb_policy least_conn
+  lb_try_duration 15s
+  lb_try_interval 250ms
+  fail_duration 5s
+}
+
+[[ range $domain, $services := .wildcardServices ]]
+[[ $domain ]] {
+  encode zstd gzip
+
+  [[ range $serviceIndex, $service := $services ]]
+  @wildcard_[[ $serviceIndex ]] host [[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]]
+  handle @wildcard_[[ $serviceIndex ]] {
+    reverse_proxy {
+      [[ $service.To ]] [[ $service.Upstream ]]
+      import reverseProxyConfig
+      [[ if $service.UseHttps ]]
+      transport http {
+        tls
+        [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      }
+      [[ end ]]
+    }
+  }
+  [[ end ]]
+
+  # Fallback for otherwise unhandled domains
+  handle {
+    abort
+  }
+}
+[[ end ]]
+
+[[ range $service := .services ]]
+[[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]] {
+  encode zstd gzip
+
+  reverse_proxy {
+    [[ $service.To ]] [[ $service.Upstream ]]
+    import reverseProxyConfig
+    [[ if $service.UseHttps ]]
     transport http {
       tls
-      [[ if .skipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
     }
     [[ end ]]
   }
 }
+[[ end ]]

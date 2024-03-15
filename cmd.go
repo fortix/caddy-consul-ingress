@@ -3,6 +3,7 @@ package caddyconsulingress
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fortix/caddy-consul-ingress/config"
@@ -11,11 +12,6 @@ import (
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	"go.uber.org/zap"
 )
-
-func logger() *zap.Logger {
-	return caddy.Log().
-		Named("consul-ingress")
-}
 
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
@@ -26,13 +22,14 @@ func init() {
 		Flags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("consul-ingress", flag.ExitOnError)
 
-			fs.String("ingress-caddyfile", "", "A Caddyfile to use as the base configuration")
+			fs.String("template", "t", "A template file that the Caddyfile is generated from")
 			fs.String("consul-address", "http://localhost:8500", "Address of the Consul server")
 			fs.String("consul-token", "", "Access token for Consul")
 			fs.String("urlprefix", "urlprefix-", "Prefix for the tags defining service URLs")
 			fs.Duration("polling-interval", 30*time.Second, "Interval caddy should manually check consul for updated services")
-			fs.String("service-template", "", "Path to the service template file")
 			fs.String("kvpath", "/caddy-routes", "Path to the Consul KV store for custom routes")
+			fs.String("wildcard-domains", "", "Comma separated list of wildcard domains to group services by")
+			fs.Bool("verbose", false, "Set the log level to debug")
 
 			return fs
 		}(),
@@ -40,17 +37,15 @@ func init() {
 }
 
 func commandFunc(flags caddycmd.Flags) (int, error) {
-	log := logger()
-
 	caddy.TrapSignals()
 
 	// Process options
 	options := &config.Options{}
 
-	if caddyFileEnv := os.Getenv("CONSUL_INGRESS_CADDYFILE"); caddyFileEnv != "" {
-		options.Caddyfile = caddyFileEnv
+	if templateFileEnv := os.Getenv("CONSUL_INGRESS_TEMPLATE"); templateFileEnv != "" {
+		options.TemplateFile = templateFileEnv
 	} else {
-		options.Caddyfile = flags.String("ingress-caddyfile")
+		options.TemplateFile = flags.String("template")
 	}
 
 	if consulAddressEnv := os.Getenv("CONSUL_INGRESS_CONSUL_ADDRESS"); consulAddressEnv != "" {
@@ -71,21 +66,29 @@ func commandFunc(flags caddycmd.Flags) (int, error) {
 		options.UrlPrefix = flags.String("urlprefix")
 	}
 
-	if serviceTemplateEnv := os.Getenv("CONSUL_INGRESS_SERVICE_TEMPLATE"); serviceTemplateEnv != "" {
-		options.TemplateFile = serviceTemplateEnv
-	} else {
-		options.TemplateFile = flags.String("service-template")
-	}
-
 	if kvPathEnv := os.Getenv("CONSUL_INGRESS_KV_PATH"); kvPathEnv != "" {
 		options.KVPath = kvPathEnv
 	} else {
 		options.KVPath = flags.String("kvpath")
 	}
 
+	if wildcardDomainsEnv := os.Getenv("CONSUL_INGRESS_WILDCARD_DOMAINS"); wildcardDomainsEnv != "" {
+		options.WildcardDomains = strings.Split(wildcardDomainsEnv, ",")
+	} else {
+		options.WildcardDomains = strings.Split(flags.String("wildcard-domains"), ",")
+	}
+
+	if verboseEnv := os.Getenv("CONSUL_INGRESS_VERBOSE"); verboseEnv != "" {
+		options.Verbose = true
+	} else {
+		options.Verbose = flags.Bool("verbose")
+	}
+
+	options.Logger = caddy.Log().Named("consul-ingress")
+
 	if pollingIntervalEnv := os.Getenv("CONSUL_INGRESS_POLLING_INTERVAL"); pollingIntervalEnv != "" {
 		if p, err := time.ParseDuration(pollingIntervalEnv); err != nil {
-			logger().Error("Failed to parse CONSUL_INGRESS_POLLING_INTERVAL", zap.String("CONSUL_INGRESS_POLLING_INTERVAL", pollingIntervalEnv), zap.Error(err))
+			options.Logger.Error("Failed to parse CONSUL_INGRESS_POLLING_INTERVAL", zap.String("CONSUL_INGRESS_POLLING_INTERVAL", pollingIntervalEnv), zap.Error(err))
 			options.PollingInterval = flags.Duration("polling-interval")
 		} else {
 			options.PollingInterval = p
@@ -94,7 +97,7 @@ func commandFunc(flags caddycmd.Flags) (int, error) {
 		options.PollingInterval = flags.Duration("polling-interval")
 	}
 
-	log.Info("Start caddy admin")
+	options.Logger.Info("Start caddy admin")
 	err := caddy.Run(&caddy.Config{
 		Admin: &caddy.AdminConfig{
 			Listen: "tcp/localhost:2019",

@@ -1,14 +1,20 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"go.uber.org/zap"
+)
 
 // Options are the options for generator
 type Options struct {
-	Caddyfile       string
+	TemplateFile    string
 	ConsulAddress   string
 	ConsulToken     string
 	UrlPrefix       string
-	TemplateFile    string
 	KVPath          string
+	WildcardDomains []string
 	PollingInterval time.Duration
+	Verbose         bool
+	Logger          *zap.Logger
 }

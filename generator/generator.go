@@ -3,10 +3,8 @@ package generator
 import (
 	"bytes"
 	"embed"
-	"os"
+	"html/template"
 	"path"
-	"strings"
-	"text/template"
 
 	"github.com/fortix/caddy-consul-ingress/config"
 	"github.com/fortix/caddy-consul-ingress/parser"
@@ -26,103 +24,75 @@ type CaddyfileGenerator struct {
 }
 
 func NewGenerator(log *zap.Logger, options *config.Options) *CaddyfileGenerator {
-	d := &CaddyfileGenerator{
+	return &CaddyfileGenerator{
 		log:     log,
 		options: options,
 	}
-
-	// Load the base caddyfile if given
-	if options.Caddyfile != "" {
-		data, err := os.ReadFile(options.Caddyfile)
-		if err != nil {
-			log.Fatal("Failed to read Caddyfile", zap.Error(err))
-		} else {
-			d.baseCaddyfile = string(data)
-		}
-	} else {
-		log.Debug("No base Caddyfile given")
-	}
-
-	return d
 }
 
-func (generator *CaddyfileGenerator) Generate(serviceDefs []*parser.ServiceDef, kvServiceDefs []*parser.ServiceDef) string {
+func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvServiceDefs *parser.Services) string {
+
+	// Combine the service definitions and the KV service definitions into a single slice of service definitions
+	var allServiceDefs []*parser.ServiceDef
+	if serviceDefs != nil {
+		allServiceDefs = append(allServiceDefs, serviceDefs.Services...)
+	}
+	if kvServiceDefs != nil {
+		allServiceDefs = append(allServiceDefs, kvServiceDefs.Services...)
+	}
+
+	// Create a map of wildcard domains to service definitions, merge from serviceDefs and kvServiceDefs if they have the wildcard domain
+	wildcardDefs := make(map[string][]*parser.ServiceDef)
+	for _, wildcardDomain := range generator.options.WildcardDomains {
+		wc := make([]*parser.ServiceDef, 0)
+
+		if serviceDefs != nil {
+			if _, ok := serviceDefs.ServiceGroups[wildcardDomain]; ok {
+				wc = append(wc, serviceDefs.ServiceGroups[wildcardDomain]...)
+			}
+		}
+
+		if kvServiceDefs != nil {
+			if _, ok := kvServiceDefs.ServiceGroups[wildcardDomain]; ok {
+				wc = append(wc, kvServiceDefs.ServiceGroups[wildcardDomain]...)
+			}
+		}
+
+		if len(wc) > 0 {
+			wildcardDefs[wildcardDomain] = wc
+		}
+	}
+
 	var caddyfile = ""
 	var tmpl *template.Template
 	var err error
 
 	// Create the template
-	if len(serviceDefs) > 0 || len(kvServiceDefs) > 0 {
-		if generator.options.TemplateFile != "" {
-			tmpl, err = template.New(path.Base(generator.options.TemplateFile)).Delims("[[", "]]").ParseFiles(generator.options.TemplateFile)
-		} else {
-			tmpl, err = template.New("service.tmpl").Delims("[[", "]]").ParseFS(tmplFiles, "templates/service.tmpl")
-		}
-
-		if err != nil {
-			generator.log.Fatal("Failed to parse template", zap.Error(err))
-		}
+	if generator.options.TemplateFile != "" {
+		tmpl, err = template.New(path.Base(generator.options.TemplateFile)).Delims("[[", "]]").ParseFiles(generator.options.TemplateFile)
+	} else {
+		tmpl, err = template.New("service.tmpl").Delims("[[", "]]").ParseFS(tmplFiles, "templates/service.tmpl")
 	}
 
-	// Start with the common base part
-	caddyfile += generator.baseCaddyfile
-
-	// If serviceDefs is empty, then log a message
-	if len(serviceDefs) == 0 {
-		generator.log.Warn("No services found")
-	} else {
-		generator.log.Info("Number of services found", zap.Int("count", len(serviceDefs)))
-
-		for _, serviceDef := range serviceDefs {
-			urls := strings.Join(serviceDef.SrvUrls, " ")
-
-			generator.log.Info("Add service", zap.String("service", serviceDef.Upstream), zap.String("urls", urls))
-
-			var tmplData = map[string]interface{}{
-				"to":            serviceDef.To,
-				"upstream":      serviceDef.Upstream,
-				"urls":          urls,
-				"useHttps":      serviceDef.UseHttps,
-				"skipTlsVerify": serviceDef.SkipTlsVerify,
-			}
-
-			var tmplBytes bytes.Buffer
-			err = tmpl.Execute(&tmplBytes, tmplData)
-			if err != nil {
-				generator.log.Fatal("Failed to execute template", zap.Error(err))
-			}
-
-			caddyfile += tmplBytes.String() + "\n"
-		}
+	if err != nil {
+		generator.log.Fatal("Failed to parse template", zap.Error(err))
 	}
 
-	// If kvServiceDefs is empty, then log a message
-	if len(kvServiceDefs) == 0 {
-		generator.log.Warn("No static services found")
-	} else {
-		generator.log.Info("Number of static services found", zap.Int("count", len(kvServiceDefs)))
+	var tmplData = map[string]interface{}{
+		"services":         allServiceDefs,
+		"wildcardServices": wildcardDefs,
+	}
 
-		for _, serviceDef := range kvServiceDefs {
-			urls := strings.Join(serviceDef.SrvUrls, " ")
+	var tmplBytes bytes.Buffer
+	err = tmpl.Execute(&tmplBytes, tmplData)
+	if err != nil {
+		generator.log.Fatal("Failed to execute template", zap.Error(err))
+	}
 
-			generator.log.Info("Add static service", zap.String("service", serviceDef.Upstream), zap.String("urls", urls))
+	caddyfile = tmplBytes.String()
 
-			var tmplData = map[string]interface{}{
-				"to":            serviceDef.To,
-				"upstream":      serviceDef.Upstream,
-				"urls":          urls,
-				"useHttps":      serviceDef.UseHttps,
-				"skipTlsVerify": serviceDef.SkipTlsVerify,
-			}
-
-			var tmplBytes bytes.Buffer
-			err = tmpl.Execute(&tmplBytes, tmplData)
-			if err != nil {
-				generator.log.Fatal("Failed to execute template", zap.Error(err))
-			}
-
-			caddyfile += tmplBytes.String() + "\n"
-		}
+	if generator.options.Verbose {
+		generator.log.Info(caddyfile)
 	}
 
 	return caddyfile
