@@ -59,9 +59,21 @@ The plugin uses the following default template to generate the Caddyfile, it can
   }
   [[ end ]]
 
-  # Fallback for otherwise unhandled domains
   handle {
+    [[ if not $serviceGroup.Upstream ]]
     abort
+    [[ else ]]
+    reverse_proxy {
+      [[ $serviceGroup.To ]] [[ $serviceGroup.Upstream ]]
+      import reverseProxyConfig
+      [[ if $serviceGroup.UseHttps ]]
+      transport http {
+        tls
+        [[ if $serviceGroup.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      }
+      [[ end ]]
+    }
+    [[ end ]]
   }
 }
 [[ end ]]
