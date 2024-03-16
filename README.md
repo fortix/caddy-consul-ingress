@@ -39,11 +39,11 @@ The plugin uses the following default template to generate the Caddyfile, it can
   fail_duration 5s
 }
 
-[[ range $domain, $services := .wildcardServices ]]
+[[ range $domain, $serviceGroup := .wildcardServices ]]
 [[ $domain ]] {
   encode zstd gzip
 
-  [[ range $serviceIndex, $service := $services ]]
+  [[ range $serviceIndex, $service := $serviceGroup.Services ]]
   @wildcard_[[ $serviceIndex ]] host [[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]]
   handle @wildcard_[[ $serviceIndex ]] {
     reverse_proxy {
