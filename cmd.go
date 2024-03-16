@@ -28,7 +28,7 @@ func init() {
 			fs.String("urlprefix", "urlprefix-", "Prefix for the tags defining service URLs")
 			fs.Duration("polling-interval", 30*time.Second, "Interval caddy should manually check consul for updated services")
 			fs.String("kvpath", "/caddy-routes", "Path to the Consul KV store for custom routes")
-			fs.String("wildcard-domains", "", "Comma separated list of wildcard domains to group services by")
+			fs.String("wildcard-domains", "", "Space separated list of wildcard domains to group services by")
 			fs.Bool("verbose", false, "Set the log level to debug")
 
 			return fs
@@ -73,9 +73,9 @@ func commandFunc(flags caddycmd.Flags) (int, error) {
 	}
 
 	if wildcardDomainsEnv := os.Getenv("CONSUL_INGRESS_WILDCARD_DOMAINS"); wildcardDomainsEnv != "" {
-		options.WildcardDomains = strings.Split(wildcardDomainsEnv, ",")
+		options.WildcardDomains = strings.Split(wildcardDomainsEnv, " ")
 	} else {
-		options.WildcardDomains = strings.Split(flags.String("wildcard-domains"), ",")
+		options.WildcardDomains = strings.Split(flags.String("wildcard-domains"), " ")
 	}
 
 	if verboseEnv := os.Getenv("CONSUL_INGRESS_VERBOSE"); verboseEnv != "" {

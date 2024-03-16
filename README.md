@@ -14,7 +14,7 @@ The configuration is generated from tags placed against live services and custom
 | CONSUL_INGRESS_URLPREFIX | --urlprefix | Only tags starting with this string are considered for service routing, defaults to `urlprefix-` |
 | CONSUL_INGRESS_KV_PATH | --kvpath | The Key Value path to load custom routes from, defaults to `/caddy-routes` |
 | CONSUL_INGRESS_POLLING_INTERVAL | --polling-interval | Rate to poll Consul at in seconds, defaults to `30` |
-| CONSUL_INGRESS_WILDCARD_DOMAINS | --wildcard-domains | Comma separated list of wildcard domains e.g. `*.example.com` |
+| CONSUL_INGRESS_WILDCARD_DOMAINS | --wildcard-domains | Space separated list of wildcard domains e.g. `*.example.com` |
 
 ### Default Template
 
