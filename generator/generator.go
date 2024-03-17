@@ -47,6 +47,7 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvSe
 		wc := make([]*parser.ServiceDef, 0)
 		to := ""
 		upstream := ""
+		serviceName := ""
 		useHttps := false
 		skipTlsVerify := false
 
@@ -57,6 +58,7 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvSe
 				if serviceDefs.ServiceGroups[wildcardDomain].Upstream != "" {
 					to = serviceDefs.ServiceGroups[wildcardDomain].To
 					upstream = serviceDefs.ServiceGroups[wildcardDomain].Upstream
+					serviceName = serviceDefs.ServiceGroups[wildcardDomain].ServiceName
 					useHttps = serviceDefs.ServiceGroups[wildcardDomain].UseHttps
 					skipTlsVerify = serviceDefs.ServiceGroups[wildcardDomain].SkipTlsVerify
 				}
@@ -70,6 +72,7 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvSe
 				if kvServiceDefs.ServiceGroups[wildcardDomain].Upstream != "" {
 					to = kvServiceDefs.ServiceGroups[wildcardDomain].To
 					upstream = kvServiceDefs.ServiceGroups[wildcardDomain].Upstream
+					serviceName = kvServiceDefs.ServiceGroups[wildcardDomain].ServiceName
 					useHttps = kvServiceDefs.ServiceGroups[wildcardDomain].UseHttps
 					skipTlsVerify = kvServiceDefs.ServiceGroups[wildcardDomain].SkipTlsVerify
 				}
@@ -80,6 +83,7 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvSe
 			wildcardGroups[wildcardDomain] = parser.NewServiceGroup()
 			wildcardGroups[wildcardDomain].To = to
 			wildcardGroups[wildcardDomain].Upstream = upstream
+			wildcardGroups[wildcardDomain].ServiceName = serviceName
 			wildcardGroups[wildcardDomain].UseHttps = useHttps
 			wildcardGroups[wildcardDomain].SkipTlsVerify = skipTlsVerify
 			wildcardGroups[wildcardDomain].Services = wc

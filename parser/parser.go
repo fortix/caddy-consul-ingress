@@ -14,6 +14,7 @@ import (
 type ServiceDef struct {
 	To            string
 	Upstream      string
+	ServiceName   string
 	UseHttps      bool
 	SkipTlsVerify bool
 	SrvUrls       []string
@@ -22,6 +23,7 @@ type ServiceDef struct {
 type ServiceGroup struct {
 	To            string
 	Upstream      string
+	ServiceName   string
 	UseHttps      bool
 	SkipTlsVerify bool
 	Services      []*ServiceDef
@@ -31,6 +33,7 @@ func NewServiceGroup() *ServiceGroup {
 	return &ServiceGroup{
 		To:            "",
 		Upstream:      "",
+		ServiceName:   "",
 		UseHttps:      false,
 		SkipTlsVerify: false,
 		Services:      []*ServiceDef{},
@@ -70,7 +73,7 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 		for _, line := range lines {
 			segments := strings.Fields(line)
 			if len(segments) >= 2 {
-				to, upstream := p.parseService(segments[1])
+				to, upstream, serviceName := p.parseService(segments[1])
 				srvUrl := segments[0]
 				useHttps := false
 				skipTlsVerify := false
@@ -91,6 +94,7 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 					def = &ServiceDef{
 						To:            to,
 						Upstream:      upstream,
+						ServiceName:   serviceName,
 						SrvUrls:       []string{},
 						UseHttps:      useHttps,
 						SkipTlsVerify: skipTlsVerify,
@@ -117,6 +121,7 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 		def := &ServiceDef{
 			To:            defSrc.To,
 			Upstream:      defSrc.Upstream,
+			ServiceName:   defSrc.ServiceName,
 			SrvUrls:       []string{},
 			UseHttps:      defSrc.UseHttps,
 			SkipTlsVerify: defSrc.SkipTlsVerify,
@@ -147,6 +152,7 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 
 					parsedServices.ServiceGroups[wildcardDomain].To = defSrc.To
 					parsedServices.ServiceGroups[wildcardDomain].Upstream = defSrc.Upstream
+					parsedServices.ServiceGroups[wildcardDomain].ServiceName = defSrc.ServiceName
 					parsedServices.ServiceGroups[wildcardDomain].UseHttps = def.UseHttps
 					parsedServices.ServiceGroups[wildcardDomain].SkipTlsVerify = def.SkipTlsVerify
 				} else {
@@ -155,6 +161,7 @@ func (p *ServiceParser) ParseKV(kvPairs *consul.KVPairs) *Services {
 						wildcardDefs[wildcardDomain] = &ServiceDef{
 							To:            defSrc.To,
 							Upstream:      defSrc.Upstream,
+							ServiceName:   defSrc.ServiceName,
 							SrvUrls:       []string{},
 							UseHttps:      def.UseHttps,
 							SkipTlsVerify: def.SkipTlsVerify,
@@ -204,11 +211,12 @@ func (p *ServiceParser) ParseServices(services map[string][]string) *Services {
 	// Parse the services and their tags
 	for service, tags := range services {
 		if len(tags) > 0 {
-			to, upstream := p.parseService(service)
+			to, upstream, serviceName := p.parseService(service)
 
 			def := &ServiceDef{
 				To:            to,
 				Upstream:      upstream,
+				ServiceName:   serviceName,
 				SrvUrls:       []string{},
 				UseHttps:      false,
 				SkipTlsVerify: false,
@@ -260,6 +268,7 @@ func (p *ServiceParser) ParseServices(services map[string][]string) *Services {
 
 							parsedServices.ServiceGroups[wildcardDomain].To = to
 							parsedServices.ServiceGroups[wildcardDomain].Upstream = upstream
+							parsedServices.ServiceGroups[wildcardDomain].ServiceName = serviceName
 							parsedServices.ServiceGroups[wildcardDomain].UseHttps = useHttps
 							parsedServices.ServiceGroups[wildcardDomain].SkipTlsVerify = skipTlsVerify
 						} else {
@@ -268,6 +277,7 @@ func (p *ServiceParser) ParseServices(services map[string][]string) *Services {
 								wildcardDefs[wildcardDomain] = &ServiceDef{
 									To:            to,
 									Upstream:      upstream,
+									ServiceName:   serviceName,
 									SrvUrls:       []string{},
 									UseHttps:      false,
 									SkipTlsVerify: false,
@@ -326,19 +336,22 @@ func (p *ServiceParser) ParseServices(services map[string][]string) *Services {
 	return parsedServices
 }
 
-func (p *ServiceParser) parseService(service string) (string, string) {
+func (p *ServiceParser) parseService(service string) (string, string, string) {
 	var to string
 	var upstream string
+	var serviceName string
 
 	// If service starts with http:// or https:// then use it as is and to will be "to"
 	if strings.HasPrefix(service, "http://") || strings.HasPrefix(service, "https://") {
 		to = "to"
 		upstream = service
+		serviceName = ""
 	} else {
 		// It's a service so append .service.consul to it
 		to = "dynamic srv"
 		upstream = service + ".service.consul"
+		serviceName = service
 	}
 
-	return to, upstream
+	return to, upstream, serviceName
 }
