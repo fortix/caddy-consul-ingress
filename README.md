@@ -34,9 +34,10 @@ The plugin uses the following default template to generate the Caddyfile, it can
 (reverseProxyConfig) {
   header_up +X_FORWARDED_PORT 443
   lb_policy least_conn
-  lb_try_duration 15s
+  lb_try_duration 5s
   lb_try_interval 250ms
-  fail_duration 5s
+  fail_duration 2s
+  unhealthy_status 5xx
 }
 
 [[ range $domain, $serviceGroup := .wildcardServices ]]
@@ -49,12 +50,13 @@ The plugin uses the following default template to generate the Caddyfile, it can
     reverse_proxy {
       [[ $service.To ]] [[ $service.Upstream ]]
       import reverseProxyConfig
-      [[ if $service.UseHttps ]]
       transport http {
+        keepalive off
+        [[ if $service.UseHttps ]]
         tls
         [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+        [[ end ]]
       }
-      [[ end ]]
     }
   }
   [[ end ]]
@@ -66,12 +68,12 @@ The plugin uses the following default template to generate the Caddyfile, it can
     reverse_proxy {
       [[ $serviceGroup.To ]] [[ $serviceGroup.Upstream ]]
       import reverseProxyConfig
-      [[ if $serviceGroup.UseHttps ]]
       transport http {
+        [[ if $service.UseHttps ]]
         tls
-        [[ if $serviceGroup.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+        [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+        [[ end ]]
       }
-      [[ end ]]
     }
     [[ end ]]
   }
@@ -85,12 +87,12 @@ The plugin uses the following default template to generate the Caddyfile, it can
   reverse_proxy {
     [[ $service.To ]] [[ $service.Upstream ]]
     import reverseProxyConfig
-    [[ if $service.UseHttps ]]
     transport http {
+      [[ if $service.UseHttps ]]
       tls
       [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+      [[ end ]]
     }
-    [[ end ]]
   }
 }
 [[ end ]]
