@@ -55,17 +55,19 @@ func (ingressClient *ConsulIngressClient) Start() error {
 	// Start a goroutine to watch for changes in Consul services
 	ingressClient.logger.Info("Watch for changes in Consul services")
 	go func() {
+		params := &consul.QueryOptions{
+			WaitIndex:         0,
+			WaitTime:          ingressClient.options.PollingInterval,
+			AllowStale:        false,
+			RequireConsistent: true,
+		}
+
 		for {
 			consulClient, err := consul.NewClient(consulConfig)
 			if err != nil {
 				ingressClient.logger.Warn("Failed to create Consul client", zap.Error(err))
 				time.Sleep(5 * time.Second) // Wait before attempting reconnection
 				continue
-			}
-
-			params := &consul.QueryOptions{
-				WaitIndex: 0,
-				WaitTime:  ingressClient.options.PollingInterval,
 			}
 
 			for {
@@ -94,17 +96,19 @@ func (ingressClient *ConsulIngressClient) Start() error {
 	if ingressClient.options.KVPath != "" {
 		ingressClient.logger.Info("Watch for changes in Consul Key Value store")
 		go func() {
+			params := &consul.QueryOptions{
+				WaitIndex:         0,
+				WaitTime:          ingressClient.options.PollingInterval,
+				AllowStale:        false,
+				RequireConsistent: true,
+			}
+
 			for {
 				consulClient, err := consul.NewClient(consulConfig)
 				if err != nil {
 					ingressClient.logger.Warn("Failed to create Consul client", zap.Error(err))
 					time.Sleep(5 * time.Second) // Wait before attempting reconnection
 					continue
-				}
-
-				params := &consul.QueryOptions{
-					WaitIndex: 0,
-					WaitTime:  ingressClient.options.PollingInterval,
 				}
 
 				for {
