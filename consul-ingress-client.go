@@ -1,9 +1,7 @@
 package caddyconsulingress
 
 import (
-	"bytes"
 	"crypto/md5"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +12,7 @@ import (
 	"github.com/fortix/caddy-consul-ingress/parser"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	consul "github.com/hashicorp/consul/api"
 	"go.uber.org/zap"
 )
@@ -159,32 +158,44 @@ func (ingressClient *ConsulIngressClient) updateCaddyfile(log *zap.Logger) {
 			log.Warn("Failed to autosave caddyfile", zap.Error(autosaveErr), zap.String("path", CaddyfileAutosavePath))
 		}
 
-		// Create a new buffer with the configuration
-		buf := bytes.NewBufferString(caddyfile)
-
-		// Create a new request
-		req, err := http.NewRequest("POST", "http://localhost:2019/load", buf)
+		// Convert the Caddyfile to JSON
+		adapter := caddyconfig.GetAdapter("caddyfile")
+		json, warn, err := adapter.Adapt([]byte(caddyfile), nil)
 		if err != nil {
-			log.Error("Failed to create a new request", zap.Error(err))
+			log.Error("Failed to adapt Caddyfile", zap.Error(err))
+			return
 		}
 
-		// Set the content type
-		req.Header.Set("Content-Type", "text/caddyfile")
+		if ingressClient.options.Verbose {
+			log.Info("Caddyfile", zap.String("caddyfile", string(json)))
 
-		// Send the request
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Error("Failed to send the request", zap.Error(err))
+			if warn != nil {
+				log.Warn("Warnings", zap.Any("warnings", warn))
+			}
 		}
-		defer resp.Body.Close()
 
-		// Check the response
-		if resp.StatusCode == http.StatusOK {
-			log.Info("Successfully updated the Caddyfile")
-		} else {
-			log.Error("Failed to update the Caddyfile", zap.Any("response", resp.StatusCode))
+		// Restart Caddy if the Caddyfile has changed
+		if ingressClient.options.RestartOnCfgChange {
+			// Restart caddy to break in flight connections
+			log.Info("Restarting Caddy")
+			caddy.Stop()
+			err = caddy.Run(&caddy.Config{
+				Admin: &caddy.AdminConfig{
+					Listen: "tcp/localhost:2019",
+				},
+			})
+			if err != nil {
+				log.Fatal("Failed to start Caddy", zap.Error(err))
+			}
+		}
+
+		// Load the JSON into Caddy
+		err = caddy.Load(json, false)
+		if err != nil {
+			log.Error("Failed to load Caddyfile", zap.Error(err))
 			log.Error(caddyfile)
+		} else {
+			log.Info("Successfully loaded Caddyfile")
 		}
 	} else {
 		log.Info("Caddyfile has not changed, skipping reload")

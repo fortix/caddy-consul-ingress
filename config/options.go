@@ -8,13 +8,14 @@ import (
 
 // Options are the options for generator
 type Options struct {
-	TemplateFile    string
-	ConsulAddress   string
-	ConsulToken     string
-	UrlPrefix       string
-	KVPath          string
-	WildcardDomains []string
-	PollingInterval time.Duration
-	Verbose         bool
-	Logger          *zap.Logger
+	TemplateFile       string
+	ConsulAddress      string
+	ConsulToken        string
+	UrlPrefix          string
+	KVPath             string
+	WildcardDomains    []string
+	PollingInterval    time.Duration
+	Verbose            bool
+	RestartOnCfgChange bool
+	Logger             *zap.Logger
 }

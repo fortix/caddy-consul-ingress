@@ -15,6 +15,7 @@ The configuration is generated from tags placed against live services and custom
 | CONSUL_INGRESS_KV_PATH | --kvpath | The Key Value path to load custom routes from, defaults to `/caddy-routes` |
 | CONSUL_INGRESS_POLLING_INTERVAL | --polling-interval | Rate to poll Consul at in seconds, defaults to `30` |
 | CONSUL_INGRESS_WILDCARD_DOMAINS | --wildcard-domains | Space separated list of wildcard domains e.g. `*.example.com` |
+| CONSUL_INGRESS_RESTART_ON_CFG_CHANGE | --restart-on-cfg-change | Restart Caddy on configuration changes |
 
 ### Default Template
 
@@ -29,6 +30,8 @@ The plugin uses the following default template to generate the Caddyfile, it can
     level INFO
     format console
   }
+
+  grace_period 3s
 }
 
 (reverseProxyConfig) {

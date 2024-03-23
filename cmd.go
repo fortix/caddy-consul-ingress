@@ -30,6 +30,7 @@ func init() {
 			fs.String("kvpath", "/caddy-routes", "Path to the Consul KV store for custom routes")
 			fs.String("wildcard-domains", "", "Space separated list of wildcard domains to group services by")
 			fs.Bool("verbose", false, "Set the log level to debug")
+			fs.Bool("restart-on-cfg-change", false, "Restart caddy when the Caddyfile changes")
 
 			return fs
 		}(),
@@ -82,6 +83,12 @@ func commandFunc(flags caddycmd.Flags) (int, error) {
 		options.Verbose = true
 	} else {
 		options.Verbose = flags.Bool("verbose")
+	}
+
+	if restartOnCfgChangeEnv := os.Getenv("CONSUL_INGRESS_RESTART_ON_CFG_CHANGE"); restartOnCfgChangeEnv != "" {
+		options.RestartOnCfgChange = true
+	} else {
+		options.RestartOnCfgChange = flags.Bool("restart-on-cfg-change")
 	}
 
 	options.Logger = caddy.Log().Named("consul-ingress")
