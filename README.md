@@ -31,7 +31,7 @@ The plugin uses the following default template to generate the Caddyfile, it can
     format console
   }
 
-  grace_period 3s
+  grace_period 15s
 }
 
 (reverseProxyConfig) {
