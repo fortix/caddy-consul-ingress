@@ -31,11 +31,14 @@ The plugin uses the following default template to generate the Caddyfile, it can
     format console
   }
 
-  grace_period 3s
+  grace_period 15s
 }
 
 (reverseProxyConfig) {
   header_up +X_FORWARDED_PORT 443
+  header_up +X_FORWARDED_PROTO https
+  header_up X-Real-IP {remote_host}
+
   lb_policy least_conn
   lb_try_duration 5s
   lb_try_interval 250ms
