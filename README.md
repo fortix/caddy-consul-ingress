@@ -27,11 +27,11 @@ The plugin uses the following default template to generate the Caddyfile, it can
 
   log {
     output stdout
-    level INFO
+    level WARN
     format console
   }
 
-  grace_period 15s
+  grace_period 3s
 }
 
 (reverseProxyConfig) {
@@ -40,24 +40,39 @@ The plugin uses the following default template to generate the Caddyfile, it can
   header_up X-Real-IP {remote_host}
 
   lb_policy least_conn
-  lb_try_duration 5s
-  lb_try_interval 250ms
-  fail_duration 2s
+  lb_try_duration 2s
+  lb_try_interval 150ms
+  fail_duration 4s
   unhealthy_status 5xx
+}
+
+(logsConfig) {
+  log {
+    output stdout
+    level WARN
+    format console
+  }
 }
 
 [[ range $domain, $serviceGroup := .wildcardServices ]]
 [[ $domain ]] {
+  import tlsConfig
+  import logsConfig
   encode zstd gzip
 
   [[ range $serviceIndex, $service := $serviceGroup.Services ]]
   @wildcard_[[ $serviceIndex ]] host [[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]]
   handle @wildcard_[[ $serviceIndex ]] {
     reverse_proxy {
-      [[ $service.To ]] [[ $service.Upstream ]]
+      [[ $service.To ]] [[ $service.Upstream ]][[ if eq $service.To "dynamic srv" ]] {
+        refresh 5s
+        dial_timeout 1s
+      }[[ end ]]
       import reverseProxyConfig
       transport http {
-        keepalive off
+        versions 2
+        read_buffer 32KiB
+        write_buffer 32KiB
         [[ if $service.UseHttps ]]
         tls
         [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
@@ -72,15 +87,21 @@ The plugin uses the following default template to generate the Caddyfile, it can
     abort
     [[ else ]]
     reverse_proxy {
-      [[ $serviceGroup.To ]] [[ $serviceGroup.Upstream ]]
+      [[ $serviceGroup.To ]] [[ $serviceGroup.Upstream ]][[ if eq $serviceGroup.To "dynamic srv" ]] {
+        refresh 5s
+        dial_timeout 1s
+      }[[ end ]]
       import reverseProxyConfig
       transport http {
-        [[ if $service.UseHttps ]]
+        versions 2
+        read_buffer 32KiB
+        write_buffer 32KiB
+        [[ if $serviceGroup.UseHttps ]]
         tls
-        [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
+        [[ if $serviceGroup.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
         [[ end ]]
       }
-    }
+		}
     [[ end ]]
   }
 }
@@ -88,12 +109,19 @@ The plugin uses the following default template to generate the Caddyfile, it can
 
 [[ range $service := .services ]]
 [[ range $index, $element := $service.SrvUrls ]][[ if $index ]] [[ end ]][[ $element ]][[ end ]] {
+  import logsConfig
   encode zstd gzip
 
   reverse_proxy {
-    [[ $service.To ]] [[ $service.Upstream ]]
+    [[ $service.To ]] [[ $service.Upstream ]][[ if eq $service.To "dynamic srv" ]] {
+      refresh 5s
+      dial_timeout 1s
+    }[[ end ]]
     import reverseProxyConfig
     transport http {
+      versions 2
+      read_buffer 32KiB
+      write_buffer 32KiB
       [[ if $service.UseHttps ]]
       tls
       [[ if $service.SkipTlsVerify ]]tls_insecure_skip_verify[[ end ]]
