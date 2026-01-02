@@ -4,3 +4,4 @@
 /bin/*
 !/bin/.gitignore
 /caddy
+.DS_Store

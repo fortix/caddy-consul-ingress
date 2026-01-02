@@ -135,7 +135,7 @@ The plugin uses the following default template to generate the Caddyfile, it can
 ## Building
 
 ```shell
-xcaddy build --with github.com/fortix/caddy-consul-ingress
+xcaddy build --with github.com/fortix/caddy-consul-ingress=.
 ```
 
 ## Running
