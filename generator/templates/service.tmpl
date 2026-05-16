@@ -32,7 +32,6 @@
 
 [[ range $domain, $serviceGroup := .wildcardServices ]]
 [[ $domain ]] {
-  import tlsConfig
   import logsConfig
   encode zstd gzip
 
@@ -44,6 +43,7 @@
         refresh 5s
         dial_timeout 1s
       }[[ end ]]
+      header_up Host {hostport}
       import reverseProxyConfig
       transport http {
         versions 2
@@ -67,6 +67,7 @@
         refresh 5s
         dial_timeout 1s
       }[[ end ]]
+      header_up Host {hostport}
       import reverseProxyConfig
       transport http {
         versions 2
@@ -93,6 +94,7 @@
       refresh 5s
       dial_timeout 1s
     }[[ end ]]
+    header_up Host {hostport}
     import reverseProxyConfig
     transport http {
       versions 2
