@@ -3,8 +3,9 @@ package generator
 import (
 	"bytes"
 	"embed"
-	"html/template"
 	"path"
+	"strings"
+	"text/template"
 
 	"github.com/fortix/caddy-consul-ingress/config"
 	"github.com/fortix/caddy-consul-ingress/parser"
@@ -94,11 +95,34 @@ func (generator *CaddyfileGenerator) Generate(serviceDefs *parser.Services, kvSe
 	var tmpl *template.Template
 	var err error
 
+	// Template functions
+	funcMap := template.FuncMap{
+		"contains":  strings.Contains,
+		"hasSuffix": strings.HasSuffix,
+		"isManaged": func(url string) bool {
+			for _, wd := range generator.options.WildcardDomains {
+				// Check if it's a wildcard domain (e.g. *.fortixcloud.com)
+				if strings.HasPrefix(wd, "*.") {
+					suffix := wd[1:] // ".fortixcloud.com"
+					if strings.HasSuffix(url, suffix) || url == wd[2:] {
+						return true
+					}
+				} else {
+					// Exact match (e.g. fortix.systems)
+					if url == wd {
+						return true
+					}
+				}
+			}
+			return false
+		},
+	}
+
 	// Create the template
 	if generator.options.TemplateFile != "" {
-		tmpl, err = template.New(path.Base(generator.options.TemplateFile)).Delims("[[", "]]").ParseFiles(generator.options.TemplateFile)
+		tmpl, err = template.New(path.Base(generator.options.TemplateFile)).Funcs(funcMap).Delims("[[", "]]").ParseFiles(generator.options.TemplateFile)
 	} else {
-		tmpl, err = template.New("service.tmpl").Delims("[[", "]]").ParseFS(tmplFiles, "templates/service.tmpl")
+		tmpl, err = template.New("service.tmpl").Funcs(funcMap).Delims("[[", "]]").ParseFS(tmplFiles, "templates/service.tmpl")
 	}
 
 	if err != nil {
